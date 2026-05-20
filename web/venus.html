@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VENUS - 数字人实时交互</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --bg-color: #FDF8F5;
+            --panel-bg: #FFFFFF;
+            --text-main: #333333;
+            --text-muted: #888888;
+            --gold-light: #F0E6D8;
+            --gold-dark: #CFA670;
+            --gold-text: #B48753;
+            --border-radius: 16px;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 24px;
+            background: linear-gradient(to right, #FDF8F5, #FFFDFB);
+            border-bottom: 1px solid rgba(207, 166, 112, 0.2);
+            height: 60px;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--gold-dark);
+            letter-spacing: 2px;
+            font-family: serif;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: var(--text-muted);
+            border-left: 1px solid #ddd;
+            padding-left: 16px;
+        }
+
+        .status-badge {
+            background-color: #E8F5E9;
+            color: #2E7D32;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .status-badge.disconnected {
+            background-color: #FFEBEE;
+            color: #C62828;
+        }
+        .status-badge .dot {
+            width: 8px;
+            height: 8px;
+            background-color: #4CAF50;
+            border-radius: 50%;
+        }
+        .status-badge.disconnected .dot {
+            background-color: #F44336;
+        }
+
+        .header-center {
+            display: flex;
+            background-color: #F5EFE6;
+            border-radius: 20px;
+            padding: 4px;
+        }
+
+        .path-btn {
+            padding: 6px 20px;
+            border: none;
+            background: transparent;
+            border-radius: 16px;
+            font-size: 14px;
+            font-weight: bold;
+            color: var(--gold-text);
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .path-btn.active {
+            background-color: var(--gold-dark);
+            color: #fff;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .icon-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 1px solid #ddd;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: var(--text-main);
+        }
+
+        .icon-btn.recording {
+            background-color: #FFEBEE;
+            color: #C62828;
+            border-color: #FFCDD2;
+            animation: pulse-record 1.5s infinite;
+        }
+
+        @keyframes pulse-record {
+            0% { box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(244, 67, 54, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
+        }
+
+        .end-call-btn {
+            padding: 6px 16px;
+            border-radius: 20px;
+            border: 1px solid #FFCDD2;
+            background-color: #FFEBEE;
+            color: #C62828;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Main Content */
+        .main-content {
+            display: flex;
+            flex: 1;
+            padding: 16px;
+            gap: 16px;
+            overflow: hidden;
+        }
+
+        .panel {
+            background-color: var(--panel-bg);
+            border-radius: var(--border-radius);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        /* Left Panel */
+        .left-panel {
+            width: 280px;
+            padding: 24px;
+            align-items: center;
+        }
+        
+        .panel-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        .config-item {
+            width: 100%;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .config-label {
+            font-size: 12px;
+            color: var(--text-main);
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .img-preview {
+            width: 120px;
+            height: 120px;
+            border: 2px solid var(--text-main);
+            border-radius: 12px;
+            margin: 0 auto;
+            overflow: hidden;
+            background-color: #f9f9f9;
+        }
+        .img-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .upload-text {
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-top: 8px;
+            cursor: pointer;
+        }
+
+        .select-input {
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            font-size: 14px;
+            appearance: none;
+            background: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e") no-repeat right 12px center;
+            background-size: 16px;
+        }
+
+        .start-btn {
+            width: 100%;
+            padding: 12px;
+            background-color: #F8F9FA;
+            border: 1px solid #eee;
+            border-radius: 24px;
+            font-weight: bold;
+            margin-top: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: all 0.2s;
+        }
+        .start-btn:hover {
+            background-color: #e9ecef;
+        }
+
+        .success-msg {
+            color: #4CAF50;
+            font-size: 12px;
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        /* Center Panel */
+        .center-panel {
+            flex: 1;
+            justify-content: center;
+            align-items: center;
+            background-color: #FAFAFA;
+            border: 1px dashed #ddd;
+        }
+        
+        .camera-prompt {
+            color: var(--text-muted);
+            font-size: 14px;
+            text-align: center;
+        }
+
+        /* Right Panel */
+        .right-panel {
+            flex: 1;
+            overflow: hidden;
+            background-color: #000;
+        }
+        
+        .right-panel video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .refresh-btn {
+            position: absolute;
+            bottom: 16px;
+            right: 16px;
+            width: 32px;
+            height: 32px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #E91E63;
+        }
+
+        .panel-footer-text {
+            position: absolute;
+            bottom: -24px;
+            width: 100%;
+            text-align: center;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Bottom Section */
+        .bottom-section {
+            background-color: #fff;
+            border-top: 1px solid #eee;
+            padding: 16px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            height: 200px;
+        }
+
+        .chat-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .msg-count {
+            color: var(--text-muted);
+            font-weight: normal;
+        }
+
+        .chat-history {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding-right: 8px;
+        }
+
+        .chat-msg {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+        .chat-msg.system {
+            align-items: flex-start;
+        }
+
+        .msg-bubble {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .msg-text {
+            font-size: 14px;
+            padding: 8px 12px;
+            background-color: #f1f1f1;
+            border-radius: 12px;
+        }
+
+        .avatar-placeholder {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 1px solid #ddd;
+        }
+
+        .msg-time {
+            font-size: 10px;
+            color: #aaa;
+            margin-top: 4px;
+        }
+
+        .input-area {
+            position: relative;
+        }
+
+        .input-area input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #ddd;
+            border-radius: 24px;
+            font-size: 14px;
+            outline: none;
+        }
+        
+        .input-area button {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+
+        /* Footer Info */
+        .footer-info {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            font-size: 12px;
+            color: var(--text-muted);
+            padding: 8px 0;
+            background-color: #fff;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <div class="logo">VENUS</div>
+            <div class="subtitle">数字人实时交互</div>
+            <div class="status-badge disconnected" id="connection-status">
+                <div class="dot"></div>
+                <span id="status-text">未连接</span>
+            </div>
+        </div>
+        <div class="header-center">
+            <button class="path-btn active">PATH A</button>
+            <button class="path-btn">PATH B</button>
+        </div>
+        <div class="header-right">
+            <button class="icon-btn" id="mic-btn" title="按住说话"><i class="bi bi-mic"></i></button>
+            <button class="icon-btn" id="camera-btn" title="开启/关闭摄像头"><i class="bi bi-camera-video"></i></button>
+            <button class="icon-btn"><i class="bi bi-gear"></i></button>
+            <button class="end-call-btn" id="stop" style="display: none;"><i class="bi bi-telephone-x"></i> 结束通话</button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Left Panel: Config -->
+        <div style="position: relative;">
+            <div class="panel left-panel">
+                <div class="panel-title">素材配置</div>
+                
+                <div class="config-item">
+                    <span class="config-label">参考图片 *</span>
+                    <div class="img-preview">
+                        <img src="https://via.placeholder.com/120" alt="avatar">
+                    </div>
+                </div>
+
+                <div class="config-item">
+                    <span class="config-label">参考音频 (可选)</span>
+                    <div class="upload-text">点击上传音频</div>
+                </div>
+
+                <div class="config-item">
+                    <span class="config-label">音色选择</span>
+                    <select class="select-input" id="voice-select">
+                        <option value="mimo_default">Mimo 默认</option>
+                        <option value="冰糖">冰糖</option>
+                        <option value="茉莉">茉莉</option>
+                        <option value="苏打">苏打</option>
+                        <option value="Mia">Mia</option>
+                    </select>
+                </div>
+
+                <button class="start-btn" id="start">上传并启动通话</button>
+                <div class="success-msg" id="start-success-msg" style="display: none;">
+                    <i class="bi bi-check-circle-fill"></i> 通话已启动，开始对话吧！
+                </div>
+            </div>
+            <div class="panel-footer-text">通话配置</div>
+        </div>
+
+        <!-- Center Panel: User Camera -->
+        <div style="position: relative; flex: 1; display: flex; flex-direction: column;">
+            <div class="panel center-panel" style="overflow: hidden;">
+                <div class="camera-prompt">
+                    可选：点击开启摄像头<br>
+                    <span style="font-size: 12px;">(需要HTTPS或localhost)</span>
+                </div>
+                <video id="user-video" autoplay muted playsinline style="width: 100%; height: 100%; object-fit: cover; display: none;"></video>
+            </div>
+            <div class="panel-footer-text">用户摄像头 (可选)</div>
+        </div>
+
+        <!-- Right Panel: AI Avatar -->
+        <div style="position: relative; flex: 1; display: flex; flex-direction: column;">
+            <div class="panel right-panel">
+                <video id="video" autoplay playsinline></video>
+                <div class="refresh-btn"><i class="bi bi-arrow-repeat"></i></div>
+            </div>
+            <div class="panel-footer-text">AI 数字人</div>
+        </div>
+    </div>
+
+    <!-- Bottom Section: Chat -->
+    <div class="bottom-section">
+        <div class="chat-header">
+            <span>对话记录</span>
+            <span class="msg-count" id="msg-count">0 条消息</span>
+        </div>
+        
+        <div class="chat-history" id="chat-messages">
+            <!-- Messages will appear here -->
+        </div>
+
+        <form class="input-area" id="chat-form">
+            <input type="text" id="chat-message" placeholder="输入消息...">
+            <button type="submit"><i class="bi bi-send"></i></button>
+        </form>
+    </div>
+
+    <!-- Footer Info -->
+    <div class="footer-info">
+        <span>WebRTC</span>
+        <span>HLS 流</span>
+        <span>音频</span>
+        <span>录制</span>
+        <span>00:00</span>
+    </div>
+
+    <input type="hidden" id="sessionid" value="0">
+
+    <script src="client.js"></script>
+    <script src="srs.sdk.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            let msgCount = 0;
+
+            function updateConnectionStatus(status) {
+                const badge = $('#connection-status');
+                const text = $('#status-text');
+                
+                if (status === 'connected') {
+                    badge.removeClass('disconnected');
+                    text.text('已连接');
+                    $('#start-success-msg').show();
+                } else {
+                    badge.addClass('disconnected');
+                    text.text('未连接');
+                    $('#start-success-msg').hide();
+                }
+            }
+
+            function addChatMessage(message, type = 'user') {
+                const container = $('#chat-messages');
+                const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+                
+                let html = '';
+                if (type === 'user') {
+                    html = `
+                    <div class="chat-msg">
+                        <div class="msg-bubble">
+                            <div class="msg-text">${message}</div>
+                            <div class="avatar-placeholder"></div>
+                        </div>
+                        <div class="msg-time">${time}</div>
+                    </div>`;
+                } else {
+                    html = `
+                    <div class="chat-msg system">
+                        <div class="msg-bubble">
+                            <div class="avatar-placeholder" style="background:#F0E6D8"></div>
+                            <div class="msg-text">${message}</div>
+                        </div>
+                        <div class="msg-time">${time}</div>
+                    </div>`;
+                }
+                
+                container.append(html);
+                container.scrollTop(container[0].scrollHeight);
+                msgCount++;
+                $('#msg-count').text(`${msgCount} 条消息`);
+            }
+
+            $('#start').click(function() {
+                updateConnectionStatus('connecting');
+                $('#status-text').text('连接中...');
+                start(); // from client.js
+                $(this).hide();
+                $('#stop').show();
+                
+                let checkTimer = setInterval(function() {
+                    const video = document.getElementById('video');
+                    if (video.readyState >= 3 && video.videoWidth > 0) {
+                        updateConnectionStatus('connected');
+                        clearInterval(checkTimer);
+                    }
+                }, 2000);
+            });
+
+            $('#stop').click(function() {
+                stop(); // from client.js
+                $(this).hide();
+                $('#start').show();
+                updateConnectionStatus('disconnected');
+            });
+
+            $('#chat-form').on('submit', function(e) {
+                e.preventDefault();
+                const message = $('#chat-message').val();
+                const voice = $('#voice-select').val();
+                if (!message.trim()) return;
+                
+                fetch('/human', {
+                    body: JSON.stringify({
+                        text: message,
+                        type: 'chat',
+                        interrupt: true,
+                        sessionid: String(document.getElementById('sessionid').value),
+                        tts: { voice: voice } // Pass voice info
+                    }),
+                    headers: { 'Content-Type': 'application/json' },
+                    method: 'POST'
+                });
+                
+                addChatMessage(message, 'user');
+                $('#chat-message').val('');
+            });
+
+            // Handle global functions expected by client.js
+            window.onWebRTCConnected = function() {
+                updateConnectionStatus('connected');
+            };
+            window.onWebRTCDisconnected = function() {
+                updateConnectionStatus('disconnected');
+            };
+
+            // Audio recording for end-to-end MiMo model
+            let mediaRecorder;
+            let audioChunks = [];
+            let isRecording = false;
+            let userStream = null;
+            let frameInterval;
+            let capturedFrames = [];
+
+            $('#camera-btn').click(async function() {
+                const videoElem = document.getElementById('user-video');
+                const promptElem = document.querySelector('.camera-prompt');
+                
+                if (userStream) {
+                    userStream.getTracks().forEach(track => track.stop());
+                    userStream = null;
+                    videoElem.srcObject = null;
+                    videoElem.style.display = 'none';
+                    promptElem.style.display = 'block';
+                    $(this).removeClass('active');
+                    $(this).css({backgroundColor: '', color: '', borderColor: ''});
+                } else {
+                    try {
+                        userStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                        videoElem.srcObject = userStream;
+                        videoElem.style.display = 'block';
+                        promptElem.style.display = 'none';
+                        $(this).addClass('active');
+                        $(this).css({backgroundColor: '#CFA670', color: '#fff', borderColor: '#CFA670'});
+                    } catch (err) {
+                        console.error('无法访问摄像头:', err);
+                        alert('无法访问摄像头，请检查权限。');
+                    }
+                }
+            });
+
+            function captureFrame() {
+                const video = document.getElementById('user-video');
+                if (!video || video.style.display === 'none') return;
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth / 2; 
+                canvas.height = video.videoHeight / 2;
+                if(canvas.width === 0) return;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                capturedFrames.push(dataUrl.split(',')[1]);
+            }
+
+            $('#mic-btn').on('mousedown touchstart', function(e) {
+                e.preventDefault();
+                if (isRecording) return;
+                
+                navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+                    audioChunks = [];
+                    capturedFrames = [];
+                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder.ondataavailable = e => {
+                        if (e.data.size > 0) audioChunks.push(e.data);
+                    };
+                    mediaRecorder.start();
+                    isRecording = true;
+                    $('#mic-btn').addClass('recording');
+                    
+                    if (userStream) {
+                        captureFrame();
+                        frameInterval = setInterval(captureFrame, 1000);
+                    }
+                }).catch(err => {
+                    console.error('无法访问麦克风:', err);
+                });
+            }).on('mouseup mouseleave touchend', function() {
+                if (!isRecording) return;
+                mediaRecorder.stop();
+                isRecording = false;
+                if (frameInterval) clearInterval(frameInterval);
+                
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                $('#mic-btn').removeClass('recording');
+                
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    const reader = new FileReader();
+                    reader.readAsDataURL(audioBlob);
+                    reader.onloadend = () => {
+                        const base64Audio = reader.result.split(',')[1];
+                        const voice = $('#voice-select').val();
+                        
+                        let msgText = "🎤 [语音消息]";
+                        if (capturedFrames.length > 0) msgText += " 📷 [附带画面]";
+                        addChatMessage(msgText, 'user');
+                        
+                        fetch('/chat_audio', {
+                            body: JSON.stringify({
+                                audio_data: base64Audio,
+                                images_data: capturedFrames,
+                                sessionid: String(document.getElementById('sessionid').value),
+                                tts: { voice: voice }
+                            }),
+                            headers: { 'Content-Type': 'application/json' },
+                            method: 'POST'
+                        });
+                    };
+                };
+            });
+        });
+    </script>
+</body>
+</html>
