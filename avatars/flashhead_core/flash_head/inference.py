@@ -2,12 +2,16 @@
 import yaml
 import torch
 import copy
+import os
 from loguru import logger
 
 from flash_head.src.pipeline.flash_head_pipeline import FlashHeadPipeline
 from flash_head.src.distributed.usp_device import get_device, get_parallel_degree
 
-with open("flash_head/configs/infer_params.yaml", "r") as f:
+# 获取当前文件所在目录
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_config_path = os.path.join(_current_dir, "configs", "infer_params.yaml")
+with open(_config_path, "r") as f:
     infer_params = yaml.safe_load(f)
 
 def get_pipeline(world_size, ckpt_dir, model_type, wav2vec_dir):
@@ -74,4 +78,3 @@ def run_pipeline(pipeline, audio_embedding):
     sample = pipeline.generate(audio_embedding)
     sample_frames = (((sample+1)/2).permute(1,2,3,0).clip(0,1) * 255).contiguous()
     return sample_frames
-

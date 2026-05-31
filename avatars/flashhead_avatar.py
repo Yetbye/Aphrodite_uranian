@@ -17,18 +17,18 @@ if flashhead_core_path not in sys.path:
 
 from flash_head.inference import get_pipeline, get_base_data, get_infer_params, get_audio_embedding, run_pipeline
 from avatars.base_avatar import BaseAvatar
+from avatars.audio_features.mel import MelASR
 from utils.logger import logger
 from utils.image import read_imgs
 from utils.device import initialize_device
 from registry import register
+from collections import deque
 
 device = initialize_device()
 
 def load_model(opt):
     logger.info("Loading FlashHead Model...")
     world_size = 1
-    # 强制将一些环境变量或参数传给 pipeline
-    # 注意: flashhead 区分 pro / lite, 默认可以用 lite 以保证实时性
     model_type = getattr(opt, 'flashhead_model_type', 'lite')
     pipeline = get_pipeline(world_size=world_size, ckpt_dir=opt.flashhead_ckpt, wav2vec_dir=opt.wav2vec_dir, model_type=model_type)
     return pipeline
@@ -62,6 +62,10 @@ class FlashHeadAvatar(BaseAvatar):
         self.pipeline = model
         self.frame_list_cycle, self.cond_image_path = avatar
         
+        # 初始化 ASR
+        self.asr = MelASR(opt, self)
+        self.asr.warm_up()
+        
         # 提取推理参数
         self.infer_params = get_infer_params()
         self.sample_rate = self.infer_params['sample_rate']
@@ -73,9 +77,7 @@ class FlashHeadAvatar(BaseAvatar):
         # 初始化条件图
         get_base_data(self.pipeline, cond_image_path_or_dir=self.cond_image_path, base_seed=42, use_face_crop=False)
         
-        # 为了兼容流式，FlashHead需要攒够一定长度的音频
-        # 一次生成 slice_len 帧视频对应的音频长度
-        self.audio_buffer = []
+        # 音频缓冲区配置（参考 generate_video.py 的 stream 模式）
         self.audio_chunk_size = self.slice_len * self.sample_rate // self.tgt_fps
         
         # 维护一个连续的audio queue，用于计算audio_embedding
@@ -84,20 +86,25 @@ class FlashHeadAvatar(BaseAvatar):
         self.audio_end_idx = cached_audio_duration * self.tgt_fps
         self.audio_start_idx = self.audio_end_idx - self.frame_num
         
-        from collections import deque
         self.audio_dq = deque([0.0] * self.cached_audio_length_sum, maxlen=self.cached_audio_length_sum)
         self.is_first_chunk = True
+        
+        # 预分配静音帧（当没有音频输入时显示静态图）
+        self.silent_frames = []
+        
+        logger.info(f"FlashHead Avatar initialized: slice_len={self.slice_len}, audio_chunk_size={self.audio_chunk_size}")
 
     def inference(self, quit_event):
         logger.info('FlashHead start inference thread')
+        
         while not quit_event.is_set():
             try:
+                # 从 ASR 获取音频特征
                 audiofeat_batch = self.asr.feat_queue.get(block=True, timeout=1)
             except queue.Empty:
                 continue
                 
-            # BaseAvatar中的asr默认输出的audio_frames是20ms块
-            # 我们需要把它们收集起来转成numpy array
+            # 收集音频帧 (PCM 数据)
             audio_frames = []
             for _ in range(self.batch_size * 2):
                 try:
@@ -111,43 +118,57 @@ class FlashHeadAvatar(BaseAvatar):
 
             # 将 pcm 组装起来
             pcm_data = np.concatenate([f.data for f in audio_frames])
-            self.audio_buffer.extend(pcm_data.tolist())
             
-            # 当缓冲够了一个 block 的要求时
-            while len(self.audio_buffer) >= self.audio_chunk_size:
-                human_speech_array = np.array(self.audio_buffer[:self.audio_chunk_size])
-                self.audio_buffer = self.audio_buffer[self.audio_chunk_size:]
-                
-                # Streaming encode
-                self.audio_dq.extend(human_speech_array.tolist())
-                audio_array = np.array(self.audio_dq)
-                
+            # 直接处理这段音频（参考 generate_video.py 的 stream 模式）
+            # 将音频加入 deque
+            self.audio_dq.extend(pcm_data.tolist())
+            audio_array = np.array(self.audio_dq)
+            
+            # 检查是否有足够的音频进行推理
+            # 需要至少 frame_num 帧对应的音频长度
+            min_audio_length = self.frame_num * self.sample_rate // self.tgt_fps
+            if len(audio_array) < min_audio_length:
+                continue
+            
+            try:
+                # 音频编码
                 audio_embedding = get_audio_embedding(self.pipeline, audio_array, self.audio_start_idx, self.audio_end_idx)
                 
+                # 生成视频
                 video = run_pipeline(self.pipeline, audio_embedding)
                 
+                # 处理 motion frames
                 if not self.is_first_chunk:
                     video = video[self.motion_frames_num:]
                 else:
                     self.is_first_chunk = False
-                    
-                video = video.cpu().numpy().astype(np.uint8)
                 
-                # 将生成的帧放入res_frame_queue
-                # FlashHead生成的是一连串帧，我们需要把它一帧一帧地压入BaseAvatar要求的队列格式中
-                for i in range(video.shape[0]):
-                    frame = video[i]
-                    # 我们需要配套给它一个假的audio_frames以便后续处理
-                    # 为了简化，直接传递None或第一个audioframe的元数据
-                    idx = i % len(self.frame_list_cycle) if len(self.frame_list_cycle) > 0 else 0
+                # video 是 (T, H, W, C) 的 numpy 数组，值范围 [0, 255]
+                # 转换为 uint8 并放入队列
+                video_np = video.cpu().numpy().astype(np.uint8)
+                
+                # 将生成的帧放入 res_frame_queue
+                # 每帧对应一个音频块
+                audio_per_frame = len(audio_frames) // video_np.shape[0] if video_np.shape[0] > 0 else 1
+                
+                for i in range(video_np.shape[0]):
+                    frame = video_np[i]
+                    # 获取对应的音频帧
+                    start_idx = i * audio_per_frame
+                    end_idx = min((i + 1) * audio_per_frame, len(audio_frames))
+                    frame_audio = audio_frames[start_idx:end_idx] if start_idx < len(audio_frames) else audio_frames[:1]
                     
-                    # 取对应长度的原始音频给回推流
-                    # 这里是简化的处理，实际可能需要更精确的音视频时间戳对齐
-                    self.res_frame_queue.put((frame, audio_frames[:2], idx))
+                    idx = i % len(self.frame_list_cycle) if len(self.frame_list_cycle) > 0 else 0
+                    self.res_frame_queue.put((frame, frame_audio, idx))
+                    
+            except Exception as e:
+                logger.error(f"FlashHead inference error: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
                     
         logger.info('FlashHead inference thread stop')
         
     def paste_back_frame(self, pred_frame, idx:int):
-        # FlashHead 生成的是整个半身或头部，如果是全画幅可能不需要 paste_back，这里直接返回
-        # 如果需要做人脸替换，需要引入额外的 crop & paste 逻辑
+        # FlashHead 生成的是完整图像，不需要 paste_back
         return pred_frame
