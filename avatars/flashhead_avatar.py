@@ -90,6 +90,7 @@ class FlashHeadAvatar(BaseAvatar):
         
         # 音频缓冲区配置（参考 generate_video.py 的 stream 模式）
         self.audio_chunk_size = self.slice_len * self.sample_rate // self.tgt_fps
+        self.min_audio_length = self.frame_num * self.sample_rate // self.tgt_fps
         
         # 维护一个连续的audio queue，用于计算audio_embedding
         cached_audio_duration = self.infer_params['cached_audio_duration']
@@ -98,18 +99,25 @@ class FlashHeadAvatar(BaseAvatar):
         self.audio_start_idx = self.audio_end_idx - self.frame_num
         
         self.audio_dq = deque([0.0] * self.cached_audio_length_sum, maxlen=self.cached_audio_length_sum)
-        self.is_first_chunk = True
         self.chunk_idx = 0
         
         # 预分配静音帧（当没有音频输入时显示静态图）
         self.silent_frames = []
         
         logger.info(f"[FlashHead] Avatar initialized: slice_len={self.slice_len}, "
-                    f"audio_chunk_size={self.audio_chunk_size}, cached_audio_length_sum={self.cached_audio_length_sum}, "
+                    f"audio_chunk_size={self.audio_chunk_size}, min_audio_length={self.min_audio_length}, "
+                    f"cached_audio_length_sum={self.cached_audio_length_sum}, "
                     f"audio_start_idx={self.audio_start_idx}, audio_end_idx={self.audio_end_idx}")
 
     def inference(self, quit_event):
         logger.info('[FlashHead] Start inference thread')
+        logger.info(f'[FlashHead] Inference params: batch_size={self.batch_size}, min_audio_length={self.min_audio_length}, '
+                    f'motion_frames_num={self.motion_frames_num}, sample_rate={self.sample_rate}, tgt_fps={self.tgt_fps}')
+        
+        # 音频累积缓冲区
+        audio_accumulator = []
+        audio_accumulator_samples = 0
+        chunk_idx = 0
         
         infer_count = 0
         infer_time_total = 0.0
@@ -136,6 +144,8 @@ class FlashHeadAvatar(BaseAvatar):
                         break
             except Exception as e:
                 logger.error(f"[FlashHead] Error collecting audio frames: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
                     
             if len(audio_frames) == 0:
@@ -150,46 +160,50 @@ class FlashHeadAvatar(BaseAvatar):
                     self.res_frame_queue.put((None, frame_audio, idx))
                 continue
             
+            # 累积 PCM 数据
+            pcm_data = np.concatenate([f.data for f in audio_frames])
+            audio_accumulator.append(pcm_data)
+            audio_accumulator_samples += len(pcm_data)
+            
+            logger.debug(f'[FlashHead] Collected {len(audio_frames)} frames, {len(pcm_data)} samples, accumulator={audio_accumulator_samples}/{self.min_audio_length}')
+            
+            # 检查是否有足够音频
+            if audio_accumulator_samples < self.min_audio_length:
+                logger.debug(f'[FlashHead] Audio insufficient: {audio_accumulator_samples} < {self.min_audio_length}, accumulating...')
+                continue
+            
+            # 有足够音频，执行推理
             try:
-                # 将 pcm 组装起来
-                pcm_data = np.concatenate([f.data for f in audio_frames])
-                logger.debug(f"[FlashHead] Collected audio frames: {len(audio_frames)}, pcm_data shape: {pcm_data.shape}")
+                chunk_idx += 1
+                infer_start = time.perf_counter()
+                
+                # 拼接所有累积的音频
+                full_audio = np.concatenate(audio_accumulator)
                 
                 # 将音频加入 deque（参考 generate_video.py 的 stream 模式）
-                self.audio_dq.extend(pcm_data.tolist())
+                self.audio_dq.extend(full_audio.tolist())
                 audio_array = np.array(self.audio_dq)
                 
-                logger.debug(f"[FlashHead] Audio deque length: {len(self.audio_dq)}, audio_array shape: {audio_array.shape}")
-                
-                # 检查是否有足够的音频进行推理
-                # 需要至少 frame_num 帧对应的音频长度
-                min_audio_length = self.frame_num * self.sample_rate // self.tgt_fps
-                if len(audio_array) < min_audio_length:
-                    logger.debug(f"[FlashHead] Audio too short for inference: {len(audio_array)} < {min_audio_length}")
-                    continue
+                logger.info(f'[FlashHead] Chunk {chunk_idx}: Audio sufficient: {len(audio_array)} samples, starting inference')
                 
                 # 音频编码
-                logger.debug(f"[FlashHead] Getting audio embedding: audio_start_idx={self.audio_start_idx}, audio_end_idx={self.audio_end_idx}")
+                emb_start = time.perf_counter()
                 audio_embedding = get_audio_embedding(self.pipeline, audio_array, self.audio_start_idx, self.audio_end_idx)
+                emb_time = time.perf_counter() - emb_start
+                logger.info(f'[FlashHead] Chunk {chunk_idx}: Audio embedding done, shape={audio_embedding.shape}, time={emb_time:.3f}s')
                 
                 # 生成视频
                 torch.cuda.synchronize() if torch.cuda.is_available() else None
-                start_time = time.perf_counter()
+                gen_start = time.perf_counter()
                 
                 video = run_pipeline(self.pipeline, audio_embedding)
                 
                 torch.cuda.synchronize() if torch.cuda.is_available() else None
-                end_time = time.perf_counter()
-                infer_time = end_time - start_time
+                gen_time = time.perf_counter() - gen_start
+                
+                infer_time = time.perf_counter() - infer_start
                 infer_time_total += infer_time
                 infer_count += 1
-                
-                # 处理 motion frames（参考 generate_video.py: chunk_idx != 0 时去掉 motion_frames_num）
-                if not self.is_first_chunk:
-                    video = video[self.motion_frames_num:]
-                else:
-                    self.is_first_chunk = False
-                    logger.info(f"[FlashHead] First chunk processed, motion_frames_num={self.motion_frames_num} kept.")
                 
                 # video 转换为 numpy 数组 (T, H, W, C)，值范围 [0, 255]
                 if isinstance(video, torch.Tensor):
@@ -202,9 +216,11 @@ class FlashHeadAvatar(BaseAvatar):
                     video_np = (video_np * 255).clip(0, 255)
                 video_np = video_np.astype(np.uint8)
                 
-                logger.info(f"[FlashHead] Generated video chunk-{self.chunk_idx}: shape={video_np.shape}, "
-                            f"dtype={video_np.dtype}, range=[{video_np.min()}, {video_np.max()}], "
-                            f"infer_time={infer_time:.3f}s")
+                logger.info(f'[FlashHead] Chunk {chunk_idx}: Generation done, video shape={video_np.shape}, dtype={video_np.dtype}, time={gen_time:.3f}s')
+                
+                # 所有 chunk 都去掉 motion frames
+                video_np = video_np[self.motion_frames_num:]
+                logger.info(f'[FlashHead] Chunk {chunk_idx}: After motion removal: {video_np.shape}')
                 
                 # 将生成的帧放入 res_frame_queue
                 # 每帧对应正确的音频块
@@ -213,6 +229,9 @@ class FlashHeadAvatar(BaseAvatar):
                 
                 for i in range(num_video_frames):
                     frame = video_np[i]
+                    # RGB -> BGR
+                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    
                     # 获取对应的音频帧
                     start_idx = i * audio_per_frame
                     end_idx = min((i + 1) * audio_per_frame, len(audio_frames))
@@ -223,6 +242,19 @@ class FlashHeadAvatar(BaseAvatar):
                 
                 self.chunk_idx += 1
                 
+                total_time = time.perf_counter() - infer_start
+                logger.info(f'[FlashHead] Chunk {chunk_idx}: Inference complete, output {video_np.shape[0]} frames, total time={total_time:.3f}s, fps={video_np.shape[0]/total_time:.1f}')
+                
+                # 清理已使用的音频，保留重叠部分
+                overlap_samples = self.motion_frames_num * self.sample_rate // self.tgt_fps
+                keep_samples = self.min_audio_length - self.audio_chunk_size + overlap_samples
+                if len(full_audio) > keep_samples:
+                    audio_accumulator = [full_audio[-keep_samples:]]
+                    audio_accumulator_samples = keep_samples
+                else:
+                    audio_accumulator = []
+                    audio_accumulator_samples = 0
+                
                 # 定期报告平均推理速度
                 if infer_count >= 100:
                     avg_infer_time = infer_time_total / infer_count
@@ -231,12 +263,12 @@ class FlashHeadAvatar(BaseAvatar):
                     infer_time_total = 0.0
                     
             except Exception as e:
-                logger.error(f"[FlashHead] Inference error: {e}")
+                logger.error(f'[FlashHead] Chunk {chunk_idx}: Inference error: {e}')
                 import traceback
                 traceback.print_exc()
                 continue
                     
-        logger.info('[FlashHead] Inference thread stop')
+        logger.info('[FlashHead] Inference thread stopped')
         
     def paste_back_frame(self, pred_frame, idx:int):
         # FlashHead 生成的是完整图像，不需要 paste_back
