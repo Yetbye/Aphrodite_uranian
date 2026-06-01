@@ -15,11 +15,11 @@ def _rand_session_id() -> str:
 class SessionManager:
     """
     全局数字人会话管理器。
-    
+
     统一管理 avatar_sessions 生命周期，并在脱离 WebRTC 时依然保持服务可用。
     """
     _instance = None
-    
+
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -30,51 +30,73 @@ class SessionManager:
             self.sessions: Dict[str, BaseAvatar] = {}
             self.build_session_fn = None
             self.initialized = True
+            logger.info("[SessionManager] Initialized")
 
     def init_builder(self, build_session_fn):
         """配置用于构建 avatar_session 的工厂函数"""
         self.build_session_fn = build_session_fn
-        
+        logger.info("[SessionManager] Builder initialized")
+
     def get_session(self, sessionid: str) -> Optional[BaseAvatar]:
         """获取已存活的会话"""
-        return self.sessions.get(sessionid)
+        session = self.sessions.get(sessionid)
+        if session is None:
+            logger.debug(f"[SessionManager] Session not found: sessionid={sessionid}")
+        else:
+            logger.debug(f"[SessionManager] Session retrieved: sessionid={sessionid}")
+        return session
 
     def has_session(self, sessionid: str) -> bool:
         """检查会话是否存在"""
-        return sessionid in self.sessions and self.sessions[sessionid] is not None
-        
+        exists = sessionid in self.sessions and self.sessions[sessionid] is not None
+        logger.debug(f"[SessionManager] has_session: sessionid={sessionid}, exists={exists}")
+        return exists
+
     async def create_session(self, params: dict, sessionid: str = None) -> str:
         """
         在异步环境中创建一个新会话
         如果 sessionid 为 None，则自动生成。
         """
         if self.build_session_fn is None:
+            logger.error("[SessionManager] Builder not initialized, cannot create session")
             raise Exception("SessionManager builder not initialized")
-            
+
         if sessionid is None:
             sessionid = _rand_session_id()
-            
-        logger.info('Creating sessionid=%s, current session num=%d', sessionid, len(self.sessions))
+
+        logger.info(f"[SessionManager] Creating session: sessionid={sessionid}, current_session_num={len(self.sessions)}, params_keys={list(params.keys())}")
         # 预先占位防止重复
         self.sessions[sessionid] = None
+        logger.debug(f"[SessionManager] Session placeholder set: sessionid={sessionid}")
 
         # 在线程池中构建 session（加载模型非常耗时）
-        avatar_session = await asyncio.get_event_loop().run_in_executor(
-            None, self.build_session_fn, sessionid, params
-        )
-        self.sessions[sessionid] = avatar_session
-        return sessionid
-        
+        try:
+            avatar_session = await asyncio.get_event_loop().run_in_executor(
+                None, self.build_session_fn, sessionid, params
+            )
+            self.sessions[sessionid] = avatar_session
+            logger.info(f"[SessionManager] Session created successfully: sessionid={sessionid}, total_sessions={len(self.sessions)}")
+            return sessionid
+        except Exception as e:
+            logger.error(f"[SessionManager] Failed to create session: sessionid={sessionid}, error={e}")
+            # 清理占位
+            self.sessions.pop(sessionid, None)
+            raise
+
     def add_session(self, sessionid: str, avatar_session: BaseAvatar):
         """同步添加静态或外部管理的会话（供非服务端入口调用）"""
         self.sessions[sessionid] = avatar_session
-        
+        logger.info(f"[SessionManager] Session added: sessionid={sessionid}, total_sessions={len(self.sessions)}")
+
     def remove_session(self, sessionid: str):
         """销毁会话资源"""
         if sessionid in self.sessions:
-            logger.info(f"Removing session {sessionid}")
+            logger.info(f"[SessionManager] Removing session: sessionid={sessionid}, total_sessions_before={len(self.sessions)}")
             # todo: 还可以主动调 avatar_session 释放
             self.sessions.pop(sessionid, None)
+            logger.info(f"[SessionManager] Session removed: sessionid={sessionid}, total_sessions_after={len(self.sessions)}")
+        else:
+            logger.warning(f"[SessionManager] Remove session failed, not found: sessionid={sessionid}")
 
 # 单例抛出
 session_manager = SessionManager()

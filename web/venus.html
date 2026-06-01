@@ -86,30 +86,6 @@
             background-color: #F44336;
         }
 
-        .header-center {
-            display: flex;
-            background-color: #F5EFE6;
-            border-radius: 20px;
-            padding: 4px;
-        }
-
-        .path-btn {
-            padding: 6px 20px;
-            border: none;
-            background: transparent;
-            border-radius: 16px;
-            font-size: 14px;
-            font-weight: bold;
-            color: var(--gold-text);
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .path-btn.active {
-            background-color: var(--gold-dark);
-            color: #fff;
-        }
-
         .header-right {
             display: flex;
             align-items: center;
@@ -179,7 +155,7 @@
             padding: 24px;
             align-items: center;
         }
-        
+
         .panel-title {
             font-size: 16px;
             font-weight: bold;
@@ -200,26 +176,37 @@
             display: block;
         }
 
-        .img-preview {
-            width: 120px;
-            height: 120px;
-            border: 2px solid var(--text-main);
-            border-radius: 12px;
-            margin: 0 auto;
-            overflow: hidden;
-            background-color: #f9f9f9;
-        }
-        .img-preview img {
+        .mode-switch {
+            display: flex;
             width: 100%;
-            height: 100%;
-            object-fit: cover;
+            background-color: #F5EFE6;
+            border-radius: 20px;
+            padding: 4px;
+            margin-bottom: 8px;
         }
 
-        .upload-text {
-            color: var(--text-muted);
-            font-size: 12px;
-            margin-top: 8px;
+        .mode-btn {
+            flex: 1;
+            padding: 8px 16px;
+            border: none;
+            background: transparent;
+            border-radius: 16px;
+            font-size: 14px;
+            font-weight: bold;
+            color: var(--gold-text);
             cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .mode-btn.active {
+            background-color: var(--gold-dark);
+            color: #fff;
+        }
+
+        .mode-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
         }
 
         .select-input {
@@ -243,6 +230,7 @@
             margin-top: 10px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             transition: all 0.2s;
+            cursor: pointer;
         }
         .start-btn:hover {
             background-color: #e9ecef;
@@ -258,6 +246,35 @@
             gap: 4px;
         }
 
+        .llm-status {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+        .llm-status.processing {
+            color: var(--gold-text);
+        }
+        .llm-status .spinner {
+            width: 12px;
+            height: 12px;
+            border: 2px solid var(--gold-light);
+            border-top-color: var(--gold-dark);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+        .llm-status.processing .spinner {
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
         /* Center Panel */
         .center-panel {
             flex: 1;
@@ -266,7 +283,7 @@
             background-color: #FAFAFA;
             border: 1px dashed #ddd;
         }
-        
+
         .camera-prompt {
             color: var(--text-muted);
             font-size: 14px;
@@ -279,13 +296,13 @@
             overflow: hidden;
             background-color: #000;
         }
-        
+
         .right-panel video {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
-        
+
         .refresh-btn {
             position: absolute;
             bottom: 16px;
@@ -389,7 +406,7 @@
             font-size: 14px;
             outline: none;
         }
-        
+
         .input-area button {
             position: absolute;
             right: 12px;
@@ -425,14 +442,9 @@
                 <span id="status-text">未连接</span>
             </div>
         </div>
-        <div class="header-center">
-            <button class="path-btn active">PATH A</button>
-            <button class="path-btn">PATH B</button>
-        </div>
         <div class="header-right">
             <button class="icon-btn" id="mic-btn" title="按住说话"><i class="bi bi-mic"></i></button>
             <button class="icon-btn" id="camera-btn" title="开启/关闭摄像头"><i class="bi bi-camera-video"></i></button>
-            <button class="icon-btn"><i class="bi bi-gear"></i></button>
             <button class="end-call-btn" id="stop" style="display: none;"><i class="bi bi-telephone-x"></i> 结束通话</button>
         </div>
     </div>
@@ -442,18 +454,15 @@
         <!-- Left Panel: Config -->
         <div style="position: relative;">
             <div class="panel left-panel">
-                <div class="panel-title">素材配置</div>
-                
-                <div class="config-item">
-                    <span class="config-label">参考图片 *</span>
-                    <div class="img-preview">
-                        <img src="https://via.placeholder.com/120" alt="avatar">
-                    </div>
-                </div>
+                <div class="panel-title">通话配置</div>
 
                 <div class="config-item">
-                    <span class="config-label">参考音频 (可选)</span>
-                    <div class="upload-text">点击上传音频</div>
+                    <span class="config-label">交互模式</span>
+                    <div class="mode-switch">
+                        <button class="mode-btn active" data-mode="chat" id="mode-chat">对话</button>
+                        <button class="mode-btn" data-mode="echo" id="mode-echo">回声</button>
+                    </div>
+                    <div class="mode-desc" id="mode-desc">调用 LLM 后 TTS 回复</div>
                 </div>
 
                 <div class="config-item">
@@ -467,9 +476,13 @@
                     </select>
                 </div>
 
-                <button class="start-btn" id="start">上传并启动通话</button>
+                <button class="start-btn" id="start">启动通话</button>
                 <div class="success-msg" id="start-success-msg" style="display: none;">
                     <i class="bi bi-check-circle-fill"></i> 通话已启动，开始对话吧！
+                </div>
+                <div class="llm-status" id="llm-status">
+                    <div class="spinner"></div>
+                    <span id="llm-status-text">LLM 空闲</span>
                 </div>
             </div>
             <div class="panel-footer-text">通话配置</div>
@@ -503,7 +516,7 @@
             <span>对话记录</span>
             <span class="msg-count" id="msg-count">0 条消息</span>
         </div>
-        
+
         <div class="chat-history" id="chat-messages">
             <!-- Messages will appear here -->
         </div>
@@ -516,11 +529,11 @@
 
     <!-- Footer Info -->
     <div class="footer-info">
+        <span id="footer-mode">模式: 对话</span>
         <span>WebRTC</span>
         <span>HLS 流</span>
         <span>音频</span>
-        <span>录制</span>
-        <span>00:00</span>
+        <span id="footer-timer">00:00</span>
     </div>
 
     <input type="hidden" id="sessionid" value="0">
@@ -531,15 +544,22 @@
     <script>
         $(document).ready(function() {
             let msgCount = 0;
+            let currentMode = 'chat';
+            let callTimer = 0;
+            let timerInterval = null;
 
             function updateConnectionStatus(status) {
                 const badge = $('#connection-status');
                 const text = $('#status-text');
-                
+
                 if (status === 'connected') {
                     badge.removeClass('disconnected');
                     text.text('已连接');
                     $('#start-success-msg').show();
+                } else if (status === 'connecting') {
+                    badge.addClass('disconnected');
+                    text.text('连接中...');
+                    $('#start-success-msg').hide();
                 } else {
                     badge.addClass('disconnected');
                     text.text('未连接');
@@ -547,10 +567,47 @@
                 }
             }
 
+            function updateLLMStatus(status) {
+                const el = $('#llm-status');
+                const text = $('#llm-status-text');
+                if (status === 'processing') {
+                    el.addClass('processing');
+                    text.text('LLM 处理中...');
+                } else {
+                    el.removeClass('processing');
+                    text.text('LLM 空闲');
+                }
+            }
+
+            function formatTime(seconds) {
+                const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+                const s = (seconds % 60).toString().padStart(2, '0');
+                return `${m}:${s}`;
+            }
+
+            function startTimer() {
+                callTimer = 0;
+                $('#footer-timer').text('00:00');
+                if (timerInterval) clearInterval(timerInterval);
+                timerInterval = setInterval(function() {
+                    callTimer++;
+                    $('#footer-timer').text(formatTime(callTimer));
+                }, 1000);
+            }
+
+            function stopTimer() {
+                if (timerInterval) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                }
+                callTimer = 0;
+                $('#footer-timer').text('00:00');
+            }
+
             function addChatMessage(message, type = 'user') {
                 const container = $('#chat-messages');
                 const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
-                
+
                 let html = '';
                 if (type === 'user') {
                     html = `
@@ -571,20 +628,38 @@
                         <div class="msg-time">${time}</div>
                     </div>`;
                 }
-                
+
                 container.append(html);
                 container.scrollTop(container[0].scrollHeight);
                 msgCount++;
                 $('#msg-count').text(`${msgCount} 条消息`);
             }
 
+            function setMode(mode) {
+                currentMode = mode;
+                $('.mode-btn').removeClass('active');
+                $(`.mode-btn[data-mode="${mode}"]`).addClass('active');
+                if (mode === 'echo') {
+                    $('#mode-desc').text('直接 TTS，不调用 LLM');
+                    $('#footer-mode').text('模式: 回声');
+                } else {
+                    $('#mode-desc').text('调用 LLM 后 TTS 回复');
+                    $('#footer-mode').text('模式: 对话');
+                }
+            }
+
+            $('.mode-btn').click(function() {
+                const mode = $(this).data('mode');
+                setMode(mode);
+            });
+
             $('#start').click(function() {
                 updateConnectionStatus('connecting');
-                $('#status-text').text('连接中...');
                 start(); // from client.js
                 $(this).hide();
                 $('#stop').show();
-                
+                startTimer();
+
                 let checkTimer = setInterval(function() {
                     const video = document.getElementById('video');
                     if (video.readyState >= 3 && video.videoWidth > 0) {
@@ -599,6 +674,7 @@
                 $(this).hide();
                 $('#start').show();
                 updateConnectionStatus('disconnected');
+                stopTimer();
             });
 
             $('#chat-form').on('submit', function(e) {
@@ -606,19 +682,33 @@
                 const message = $('#chat-message').val();
                 const voice = $('#voice-select').val();
                 if (!message.trim()) return;
-                
+
+                updateLLMStatus('processing');
+
                 fetch('/human', {
                     body: JSON.stringify({
                         text: message,
-                        type: 'chat',
+                        type: currentMode,
                         interrupt: true,
                         sessionid: String(document.getElementById('sessionid').value),
-                        tts: { voice: voice } // Pass voice info
+                        tts: { voice: voice }
                     }),
                     headers: { 'Content-Type': 'application/json' },
                     method: 'POST'
+                }).then(function(res) {
+                    if (currentMode === 'chat') {
+                        return res.json().catch(function() { return {}; });
+                    }
+                    return {};
+                }).then(function(data) {
+                    updateLLMStatus('idle');
+                    if (currentMode === 'chat' && data && data.text) {
+                        addChatMessage(data.text, 'ai');
+                    }
+                }).catch(function() {
+                    updateLLMStatus('idle');
                 });
-                
+
                 addChatMessage(message, 'user');
                 $('#chat-message').val('');
             });
@@ -629,6 +719,7 @@
             };
             window.onWebRTCDisconnected = function() {
                 updateConnectionStatus('disconnected');
+                stopTimer();
             };
 
             // Audio recording for end-to-end MiMo model
@@ -642,7 +733,7 @@
             $('#camera-btn').click(async function() {
                 const videoElem = document.getElementById('user-video');
                 const promptElem = document.querySelector('.camera-prompt');
-                
+
                 if (userStream) {
                     userStream.getTracks().forEach(track => track.stop());
                     userStream = null;
@@ -670,7 +761,7 @@
                 const video = document.getElementById('user-video');
                 if (!video || video.style.display === 'none') return;
                 const canvas = document.createElement('canvas');
-                canvas.width = video.videoWidth / 2; 
+                canvas.width = video.videoWidth / 2;
                 canvas.height = video.videoHeight / 2;
                 if(canvas.width === 0) return;
                 const ctx = canvas.getContext('2d');
@@ -682,7 +773,7 @@
             $('#mic-btn').on('mousedown touchstart', function(e) {
                 e.preventDefault();
                 if (isRecording) return;
-                
+
                 navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
                     audioChunks = [];
                     capturedFrames = [];
@@ -693,7 +784,7 @@
                     mediaRecorder.start();
                     isRecording = true;
                     $('#mic-btn').addClass('recording');
-                    
+
                     if (userStream) {
                         captureFrame();
                         frameInterval = setInterval(captureFrame, 1000);
@@ -706,10 +797,10 @@
                 mediaRecorder.stop();
                 isRecording = false;
                 if (frameInterval) clearInterval(frameInterval);
-                
+
                 mediaRecorder.stream.getTracks().forEach(track => track.stop());
                 $('#mic-btn').removeClass('recording');
-                
+
                 mediaRecorder.onstop = () => {
                     const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
                     const reader = new FileReader();
@@ -717,11 +808,11 @@
                     reader.onloadend = () => {
                         const base64Audio = reader.result.split(',')[1];
                         const voice = $('#voice-select').val();
-                        
+
                         let msgText = "🎤 [语音消息]";
                         if (capturedFrames.length > 0) msgText += " 📷 [附带画面]";
                         addChatMessage(msgText, 'user');
-                        
+
                         fetch('/chat_audio', {
                             body: JSON.stringify({
                                 audio_data: base64Audio,
