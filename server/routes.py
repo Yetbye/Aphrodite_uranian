@@ -274,5 +274,23 @@ def setup_routes(app):
     app.router.add_post("/record", record)
     app.router.add_post("/interrupt_talk", interrupt_talk)
     app.router.add_post("/is_speaking", is_speaking)
-    app.router.add_static('/', path='web')
+    
+    # 使用绝对路径配置静态文件服务
+    import os
+    current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    web_dir = os.path.join(current_dir, 'web')
+    
+    if os.path.exists(web_dir):
+        logger.info(f"[setup_routes] Serving static files from: {web_dir}")
+        app.router.add_static('/', path=web_dir, name='static')
+        
+        # 添加根路径重定向到 webrtcapi.html
+        async def index_redirect(request):
+            return web.HTTPFound('/webrtcapi.html')
+        app.router.add_get('/', index_redirect)
+        
+        logger.info("[setup_routes] Static files configured successfully")
+    else:
+        logger.error(f"[setup_routes] Web directory not found: {web_dir}")
+    
     logger.info("[setup_routes] All routes registered successfully")
