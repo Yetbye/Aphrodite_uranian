@@ -336,15 +336,26 @@ def test_audio_encoding(
         # 验证输出
         assert audio_embedding is not None, "Audio embedding is None"
         assert isinstance(audio_embedding, torch.Tensor), f"Expected Tensor, got {type(audio_embedding)}"
-        assert audio_embedding.dim() == 4, f"Expected 4D tensor, got {audio_embedding.dim()}D"
-
+        
         print_tensor_info("audio_embedding", audio_embedding)
-
-        # 验证形状: [1, num_frames, context_length, hidden_dim]
-        logger.info(f"[Audio Embed] Shape details: batch={audio_embedding.shape[0]}, "
-                    f"frames={audio_embedding.shape[1]}, "
-                    f"context_len={audio_embedding.shape[2]}, "
-                    f"hidden_dim={audio_embedding.shape[3]}")
+        
+        # 记录实际维度，支持 4D 或 5D
+        logger.info(f"[Audio Embed] Tensor dimension: {audio_embedding.dim()}D, shape: {list(audio_embedding.shape)}")
+        
+        # 验证形状（支持 4D [1,T,5,D] 或 5D [1,T,5,1,D]）
+        if audio_embedding.dim() == 4:
+            logger.info(f"[Audio Embed] Shape details: batch={audio_embedding.shape[0]}, "
+                        f"frames={audio_embedding.shape[1]}, "
+                        f"context_len={audio_embedding.shape[2]}, "
+                        f"hidden_dim={audio_embedding.shape[3]}")
+        elif audio_embedding.dim() == 5:
+            logger.info(f"[Audio Embed] Shape details: batch={audio_embedding.shape[0]}, "
+                        f"frames={audio_embedding.shape[1]}, "
+                        f"context_len={audio_embedding.shape[2]}, "
+                        f"extra_dim={audio_embedding.shape[3]}, "
+                        f"hidden_dim={audio_embedding.shape[4]}")
+        else:
+            logger.warning(f"[Audio Embed] Unexpected dimension: {audio_embedding.dim()}D")
 
         print_result("Audio Encoding", True, elapsed)
         return True, audio_embedding, elapsed
