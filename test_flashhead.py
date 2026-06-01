@@ -21,6 +21,8 @@ from typing import Optional, Tuple
 
 import numpy as np
 import torch
+import librosa
+from PIL import Image
 from loguru import logger
 
 # ---------------------------------------------------------------------------
@@ -60,6 +62,7 @@ class TestConfig:
     wav2vec_dir: str = "./models/wav2vec2-base-960h"
     model_type: str = "lite"          # "lite", "pro", "pretrained"
     cond_image_path: str = "./data/avatars/wav2lip256_avatar1/full_imgs/0.jpg"
+    audio_path: str = "./test_data/Taylor Swift、Shawn Mendes - Lover (Remix).wav"
     base_seed: int = 42
     use_face_crop: bool = False
     world_size: int = 1
@@ -90,6 +93,9 @@ def get_test_config_from_args() -> TestConfig:
     parser.add_argument("--cond_image_path", type=str,
                         default="./data/avatars/wav2lip256_avatar1/full_imgs/0.jpg",
                         help="Condition image path for prepare_params")
+    parser.add_argument("--audio_path", type=str,
+                        default="./test_data/Taylor Swift、Shawn Mendes - Lover (Remix).wav",
+                        help="Audio file path for testing")
     parser.add_argument("--base_seed", type=int, default=42, help="Random seed")
     parser.add_argument("--use_face_crop", action="store_true", help="Enable face crop")
     parser.add_argument("--skip_pipeline_init", action="store_true", help="Skip pipeline init test")
@@ -103,6 +109,7 @@ def get_test_config_from_args() -> TestConfig:
         wav2vec_dir=args.wav2vec_dir,
         model_type=args.model_type,
         cond_image_path=args.cond_image_path,
+        audio_path=args.audio_path,
         base_seed=args.base_seed,
         use_face_crop=args.use_face_crop,
         skip_pipeline_init=args.skip_pipeline_init,
@@ -141,6 +148,41 @@ def print_result(test_name: str, passed: bool, elapsed: float, details: str = ""
     status = "PASSED" if passed else "FAILED"
     icon = "✓" if passed else "✗"
     logger.info(f"[{icon}] {test_name}: {status} ({elapsed:.3f}s) {details}")
+
+
+def load_audio_file(
+    audio_path: str,
+    sample_rate: int = 16000,
+    duration_seconds: Optional[float] = None,
+) -> np.ndarray:
+    """
+    加载真实音频文件
+
+    Args:
+        audio_path: 音频文件路径
+        sample_rate: 目标采样率 (Hz)
+        duration_seconds: 加载时长 (秒), None 表示加载全部
+
+    Returns:
+        np.ndarray: 音频波形数组, shape=(num_samples,), dtype=float32
+    """
+    if not os.path.exists(audio_path):
+        logger.warning(f"[Audio] File not found: {audio_path}, falling back to random audio")
+        return generate_random_audio(sample_rate, duration_seconds or 8.0)
+    
+    try:
+        # 使用 librosa 加载音频
+        audio, sr = librosa.load(audio_path, sr=sample_rate, mono=True, duration=duration_seconds)
+        
+        logger.info(f"[Audio] Loaded from file: {audio_path}")
+        logger.info(f"[Audio] Original sample rate: {sr}, shape: {audio.shape}, "
+                    f"duration={len(audio)/sr:.2f}s, range=[{audio.min():.4f}, {audio.max():.4f}]")
+        
+        return audio.astype(np.float32)
+    except Exception as e:
+        logger.error(f"[Audio] Failed to load {audio_path}: {e}")
+        logger.info("[Audio] Falling back to random audio")
+        return generate_random_audio(sample_rate, duration_seconds or 8.0)
 
 
 def generate_random_audio(
@@ -193,6 +235,45 @@ def generate_random_audio(
     return audio
 
 
+def load_image_file(
+    image_path: str,
+    target_size: Tuple[int, int] = (512, 512),
+) -> np.ndarray:
+    """
+    加载真实图片文件
+
+    Args:
+        image_path: 图片文件路径
+        target_size: 目标尺寸 (width, height)
+
+    Returns:
+        np.ndarray: RGB 图片数组, shape=(H, W, 3), dtype=uint8
+    """
+    if not os.path.exists(image_path):
+        logger.warning(f"[Image] File not found: {image_path}, falling back to random image")
+        return generate_random_cond_image(target_size[1], target_size[0])
+    
+    try:
+        # 使用 PIL 加载图片
+        image_pil = Image.open(image_path).convert("RGB")
+        
+        # 调整尺寸
+        if image_pil.size != target_size:
+            image_pil = image_pil.resize(target_size, Image.LANCZOS)
+            logger.info(f"[Image] Resized from {image_pil.size} to {target_size}")
+        
+        image_np = np.array(image_pil)
+        
+        logger.info(f"[Image] Loaded from file: {image_path}")
+        logger.info(f"[Image] Shape: {image_np.shape}, dtype: {image_np.dtype}")
+        
+        return image_np
+    except Exception as e:
+        logger.error(f"[Image] Failed to load {image_path}: {e}")
+        logger.info("[Image] Falling back to random image")
+        return generate_random_cond_image(target_size[1], target_size[0])
+
+
 def generate_random_cond_image(
     height: int = 512,
     width: int = 512,
@@ -228,7 +309,6 @@ def save_random_image(path: str, height: int = 512, width: int = 512, seed: int 
     Returns:
         str: 保存后的图片路径
     """
-    from PIL import Image
     image_np = generate_random_cond_image(height, width, seed)
     image_pil = Image.fromarray(image_np, mode="RGB")
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
@@ -321,11 +401,11 @@ def test_audio_encoding(
         logger.error("[Audio Encode] Pipeline is None, skipping test.")
         return False, None, 0.0
 
-    # 生成随机音频
-    audio_array = generate_random_audio(
+    # 加载真实音频文件（如果不存在则回退到随机音频）
+    audio_array = load_audio_file(
+        audio_path=cfg.audio_path,
         sample_rate=cfg.sample_rate,
         duration_seconds=cfg.cached_audio_duration,
-        seed=cfg.base_seed,
     )
 
     start_time = time.perf_counter()
@@ -461,12 +541,18 @@ def test_full_pipeline(cfg: TestConfig) -> Tuple[bool, float]:
         logger.info("[Full Pipeline] Step 2/4: Preparing base data...")
         step_start = time.perf_counter()
 
-        # 如果条件图片不存在, 生成一张随机图片
+        # 加载条件图片（真实图片或随机图片）
         cond_image_path = cfg.cond_image_path
         if not os.path.exists(cond_image_path):
             logger.warning(f"[Full Pipeline] Condition image not found: {cond_image_path}")
-            cond_image_path = os.path.join(CURRENT_DIR, "test_data", "random_cond_image.jpg")
-            save_random_image(cond_image_path, height=512, width=512, seed=cfg.base_seed)
+            # 尝试使用默认测试图片
+            default_image = "./test_data/汪东城.jpg"
+            if os.path.exists(default_image):
+                cond_image_path = default_image
+                logger.info(f"[Full Pipeline] Using default test image: {cond_image_path}")
+            else:
+                cond_image_path = os.path.join(CURRENT_DIR, "test_data", "random_cond_image.jpg")
+                save_random_image(cond_image_path, height=512, width=512, seed=cfg.base_seed)
 
         get_base_data(
             pipeline,
@@ -480,10 +566,10 @@ def test_full_pipeline(cfg: TestConfig) -> Tuple[bool, float]:
         # Step 3: 音频编码
         logger.info("[Full Pipeline] Step 3/4: Encoding audio...")
         step_start = time.perf_counter()
-        audio_array = generate_random_audio(
+        audio_array = load_audio_file(
+            audio_path=cfg.audio_path,
             sample_rate=cfg.sample_rate,
             duration_seconds=cfg.cached_audio_duration,
-            seed=cfg.base_seed,
         )
         audio_embedding = get_audio_embedding(pipeline, audio_array)
         step_elapsed = time.perf_counter() - step_start
