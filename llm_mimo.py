@@ -12,6 +12,14 @@ from utils.logger import logger
 # 加载 .env 文件
 load_dotenv()
 
+# 尝试导入 openai 作为备用 LLM
+try:
+    from openai import OpenAI
+    _HAS_OPENAI = True
+except ImportError:
+    _HAS_OPENAI = False
+    logger.warning("openai package not installed, fallback LLM (Qwen) will not be available")
+
 
 def _get_mimo_api_key() -> str:
     """从环境变量或 .env 文件读取 MiMo API Key"""
@@ -19,6 +27,73 @@ def _get_mimo_api_key() -> str:
     # 去除可能的引号
     api_key = api_key.strip().strip('"').strip("'")
     return api_key
+
+
+def _fallback_to_qwen(message, avatar_session: "BaseAvatar", datainfo: dict, label: str = "Fallback") -> bool:
+    """
+    当 MiMo API 失败时，回退到通义千问 (Qwen)
+    返回 True 表示成功，False 表示失败
+    """
+    try:
+        if not _HAS_OPENAI:
+            logger.error(f"{label}: openai package not installed, cannot fallback to Qwen")
+            return False
+            
+        dashscope_key = os.getenv("DASHSCOPE_API_KEY", "").strip().strip('"').strip("'")
+        if not dashscope_key:
+            logger.error(f"{label}: DASHSCOPE_API_KEY not configured, cannot fallback to Qwen")
+            return False
+        
+        logger.info(f"{label}: Falling back to Qwen (DashScope)")
+        start = time.perf_counter()
+        
+        client = OpenAI(
+            api_key=dashscope_key,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
+        
+        completion = client.chat.completions.create(
+            model="qwen-plus",
+            messages=[
+                {'role': 'system', 'content': '你是一个数字人助手，请用简短、口语化、温柔的语气回答。'},
+                {'role': 'user', 'content': message}
+            ],
+            stream=True,
+            stream_options={"include_usage": True}
+        )
+        
+        result = ""
+        first = True
+        for chunk in completion:
+            if len(chunk.choices) > 0:
+                if first:
+                    end = time.perf_counter()
+                    logger.info(f"{label} Qwen Time to first chunk: {end-start:.3f}s")
+                    first = False
+                msg = chunk.choices[0].delta.content
+                if msg is None:
+                    continue
+                lastpos = 0
+                for i, char in enumerate(msg):
+                    if char in ",.!;:，。！？：；":
+                        result = result + msg[lastpos:i+1]
+                        lastpos = i + 1
+                        if len(result) > 10:
+                            logger.info(f"{label} Qwen output: {result}")
+                            avatar_session.put_msg_txt(result, datainfo)
+                            result = ""
+                result = result + msg[lastpos:]
+        
+        end = time.perf_counter()
+        logger.info(f"{label} Qwen Time to last chunk: {end-start:.3f}s")
+        if result:
+            avatar_session.put_msg_txt(result, datainfo)
+        
+        return True
+        
+    except Exception as e:
+        logger.exception(f"{label} Qwen fallback error:")
+        return False
 
 
 def _build_headers(api_key: str, use_bearer: bool = False) -> dict:
@@ -274,6 +349,14 @@ def llm_response(message, avatar_session: "BaseAvatar", datainfo: dict = {}):
             except Exception:
                 pass
             logger.error(f"MiMo LLM API error: {error_msg}")
+            
+            # 尝试回退到 Qwen
+            logger.info("MiMo LLM failed, trying fallback to Qwen...")
+            if _fallback_to_qwen(message, avatar_session, datainfo, label="MiMo LLM"):
+                logger.info("MiMo LLM fallback to Qwen succeeded")
+                return
+            
+            # 回退也失败，返回错误信息
             avatar_session.put_msg_txt(f"抱歉，{error_msg}，请稍后再试。", datainfo)
             return
 
@@ -281,6 +364,14 @@ def llm_response(message, avatar_session: "BaseAvatar", datainfo: dict = {}):
 
     except Exception as e:
         logger.exception("MiMo LLM exception:")
+        # 尝试回退到 Qwen
+        logger.info("MiMo LLM exception, trying fallback to Qwen...")
+        try:
+            if _fallback_to_qwen(message, avatar_session, datainfo, label="MiMo LLM"):
+                logger.info("MiMo LLM fallback to Qwen succeeded")
+                return
+        except Exception:
+            pass
         try:
             avatar_session.put_msg_txt("抱歉，发生了内部错误，请稍后再试。", datainfo)
         except Exception:
@@ -363,6 +454,15 @@ def llm_audio_response(
             except Exception:
                 pass
             logger.error(f"MiMo Audio LLM API error: {error_msg}")
+            
+            # 音频对话无法直接回退到 Qwen（因为 Qwen 不支持音频输入）
+            # 但我们可以尝试用文本描述来回退
+            logger.info("MiMo Audio LLM failed, trying fallback to Qwen with text description...")
+            fallback_msg = f"[用户发送了语音消息]"
+            if _fallback_to_qwen(fallback_msg, avatar_session, datainfo, label="MiMo Audio LLM"):
+                logger.info("MiMo Audio LLM fallback to Qwen succeeded")
+                return
+            
             avatar_session.put_msg_txt(f"抱歉，{error_msg}，请稍后再试。", datainfo)
             return
 
@@ -370,6 +470,15 @@ def llm_audio_response(
 
     except Exception as e:
         logger.exception("MiMo Audio LLM exception:")
+        # 尝试回退到 Qwen
+        logger.info("MiMo Audio LLM exception, trying fallback to Qwen...")
+        try:
+            fallback_msg = f"[用户发送了语音消息]"
+            if _fallback_to_qwen(fallback_msg, avatar_session, datainfo, label="MiMo Audio LLM"):
+                logger.info("MiMo Audio LLM fallback to Qwen succeeded")
+                return
+        except Exception:
+            pass
         try:
             avatar_session.put_msg_txt("抱歉，发生了内部错误，请稍后再试。", datainfo)
         except Exception:
