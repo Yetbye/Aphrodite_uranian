@@ -410,7 +410,14 @@ def test_audio_encoding(
 
     start_time = time.perf_counter()
     try:
-        audio_embedding = get_audio_embedding(pipeline, audio_array)
+        # 使用正确的 audio_start_idx 和 audio_end_idx
+        # 参考原始代码: audio_end_idx = cached_audio_duration * tgt_fps = 8 * 25 = 200
+        # audio_start_idx = audio_end_idx - frame_num = 200 - 33 = 167
+        audio_end_idx = cfg.cached_audio_duration * cfg.tgt_fps  # 200
+        audio_start_idx = audio_end_idx - cfg.frame_num           # 167
+        
+        logger.info(f"[Audio Encode] Using start_idx={audio_start_idx}, end_idx={audio_end_idx}")
+        audio_embedding = get_audio_embedding(pipeline, audio_array, audio_start_idx, audio_end_idx)
         elapsed = time.perf_counter() - start_time
 
         # 验证输出
@@ -594,7 +601,11 @@ def test_full_pipeline(cfg: TestConfig) -> Tuple[bool, float]:
             sample_rate=cfg.sample_rate,
             duration_seconds=cfg.cached_audio_duration,
         )
-        audio_embedding = get_audio_embedding(pipeline, audio_array)
+        # 使用正确的 audio_start_idx 和 audio_end_idx
+        audio_end_idx = cfg.cached_audio_duration * cfg.tgt_fps  # 200
+        audio_start_idx = audio_end_idx - cfg.frame_num           # 167
+        logger.info(f"[Full Pipeline] Using start_idx={audio_start_idx}, end_idx={audio_end_idx}")
+        audio_embedding = get_audio_embedding(pipeline, audio_array, audio_start_idx, audio_end_idx)
         step_elapsed = time.perf_counter() - step_start
         logger.info(f"[Full Pipeline] Step 3 done in {step_elapsed:.3f}s")
         print_tensor_info("audio_embedding (full)", audio_embedding)
