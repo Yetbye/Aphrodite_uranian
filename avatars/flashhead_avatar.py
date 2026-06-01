@@ -272,4 +272,11 @@ class FlashHeadAvatar(BaseAvatar):
         
     def paste_back_frame(self, pred_frame, idx:int):
         # FlashHead 生成的是完整图像，不需要 paste_back
+        # 但如果 pred_frame 是 None (静音状态)，返回静态图片
+        if pred_frame is None:
+            if len(self.frame_list_cycle) > 0:
+                return self.frame_list_cycle[idx % len(self.frame_list_cycle)]
+            else:
+                # 如果没有静态图片，返回黑帧
+                return np.zeros((512, 512, 3), dtype=np.uint8)
         return pred_frame

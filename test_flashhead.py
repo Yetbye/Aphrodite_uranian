@@ -16,6 +16,7 @@ import sys
 import time
 import argparse
 import traceback
+import subprocess
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -24,6 +25,7 @@ import torch
 import librosa
 from PIL import Image
 from loguru import logger
+import imageio
 
 # ---------------------------------------------------------------------------
 # 路径设置: 将 flashhead_core 加入 Python 路径
@@ -525,6 +527,19 @@ def test_video_generation(
         assert 0 <= min_val <= 255, f"Min value out of range: {min_val}"
         assert 0 <= max_val <= 255, f"Max value out of range: {max_val}"
         logger.info(f"[Video] Value range: [{min_val:.2f}, {max_val:.2f}]")
+
+        # 保存生成的视频
+        output_dir = os.path.join(CURRENT_DIR, "test_output")
+        os.makedirs(output_dir, exist_ok=True)
+        video_path = os.path.join(output_dir, "test_video_generation.mp4")
+        
+        # 将张量转换为 numpy 并保存
+        video_np = video_frames.cpu().numpy().astype(np.uint8)
+        with imageio.get_writer(video_path, format='mp4', mode='I', fps=cfg.tgt_fps, codec='h264', ffmpeg_params=['-bf', '0']) as writer:
+            for i in range(video_np.shape[0]):
+                writer.append_data(video_np[i])
+        
+        logger.info(f"[Video] Saved test video to: {video_path}")
 
         print_result("Video Generation", True, elapsed)
         return True, video_frames, elapsed
