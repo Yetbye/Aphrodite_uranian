@@ -473,6 +473,29 @@ def test_video_generation(
         logger.error("[Video Gen] Audio embedding is None, skipping test.")
         return False, None, 0.0
 
+    # 检查是否需要调用 prepare_params
+    if not hasattr(pipeline, 'frame_num') or pipeline.frame_num is None:
+        logger.info("[Video Gen] Pipeline not prepared, calling get_base_data...")
+        from flash_head.inference import get_base_data, get_infer_params
+        
+        # 加载条件图片
+        cond_image_path = cfg.cond_image_path
+        if not os.path.exists(cond_image_path):
+            default_image = "./test_data/汪东城.jpg"
+            if os.path.exists(default_image):
+                cond_image_path = default_image
+            else:
+                cond_image_path = os.path.join(CURRENT_DIR, "test_data", "random_cond_image.jpg")
+                save_random_image(cond_image_path, height=512, width=512, seed=cfg.base_seed)
+        
+        get_base_data(
+            pipeline,
+            cond_image_path_or_dir=cond_image_path,
+            base_seed=cfg.base_seed,
+            use_face_crop=cfg.use_face_crop,
+        )
+        logger.info(f"[Video Gen] Pipeline prepared: frame_num={pipeline.frame_num}, motion_frames_num={pipeline.motion_frames_num}")
+
     start_time = time.perf_counter()
     try:
         video_frames = run_pipeline(pipeline, audio_embedding)
