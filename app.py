@@ -38,7 +38,7 @@ from server.webrtc import HumanPlayer
 from avatars.base_avatar import BaseAvatar
 from llm_mimo import llm_response, llm_audio_response
 import registry
-from server.routes import setup_routes
+from server.routes import setup_routes, access_log_middleware
 from server.rtc_manager import RTCManager
 from server.session_manager import session_manager
 
@@ -224,7 +224,7 @@ def main():
         logger.info("[main] Session 0 render thread started")
 
     #############################################################################
-    appasync = web.Application(client_max_size=1024**2*100)
+    appasync = web.Application(client_max_size=1024**1*100, middlewares=[access_log_middleware])
     appasync["llm_response"] = llm_response
     appasync["llm_audio_response"] = llm_audio_response
 

@@ -5,9 +5,38 @@
 import json
 import numpy as np
 import asyncio
+import time
 from aiohttp import web
 
 from utils.logger import logger
+
+
+# ─── 访问日志中间件 ────────────────────────────────────────────────────────
+
+@web.middleware
+async def access_log_middleware(request, handler):
+    """记录所有 HTTP 请求的访问日志"""
+    start_time = time.time()
+    client_ip = request.remote or "unknown"
+    method = request.method
+    path = request.path
+    
+    logger.info(f"[HTTP] {client_ip} {method} {path} - Request started")
+    
+    try:
+        response = await handler(request)
+        elapsed = (time.time() - start_time) * 1000
+        status = response.status
+        logger.info(f"[HTTP] {client_ip} {method} {path} - Response {status} in {elapsed:.2f}ms")
+        return response
+    except web.HTTPException as ex:
+        elapsed = (time.time() - start_time) * 1000
+        logger.warning(f"[HTTP] {client_ip} {method} {path} - HTTP {ex.status} in {elapsed:.2f}ms: {ex.reason}")
+        raise
+    except Exception as e:
+        elapsed = (time.time() - start_time) * 1000
+        logger.error(f"[HTTP] {client_ip} {method} {path} - ERROR in {elapsed:.2f}ms: {e}")
+        raise
 
 
 # ─── 路由工具函数 ──────────────────────────────────────────────────────────
