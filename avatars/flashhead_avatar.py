@@ -62,7 +62,7 @@ class FlashHeadAvatar(BaseAvatar):
         self.pipeline = model
         self.frame_list_cycle, self.cond_image_path = avatar
         
-        # 初始化 ASR
+        # 初始化 ASR - 使用 try-except 防止初始化失败导致 WebRTC 连接失败
         logger.info("[FlashHead] Initializing MelASR...")
         try:
             self.asr = MelASR(opt, self)
@@ -70,7 +70,10 @@ class FlashHeadAvatar(BaseAvatar):
             logger.info("[FlashHead] MelASR initialized and warmed up successfully.")
         except Exception as e:
             logger.error(f"[FlashHead] MelASR initialization failed: {e}")
-            raise
+            import traceback
+            traceback.print_exc()
+            # 不抛出异常，让前端至少能连接
+            self.asr = None
         
         # 提取推理参数
         self.infer_params = get_infer_params()
@@ -83,7 +86,7 @@ class FlashHeadAvatar(BaseAvatar):
         logger.info(f"[FlashHead] Infer params: sample_rate={self.sample_rate}, tgt_fps={self.tgt_fps}, "
                     f"frame_num={self.frame_num}, motion_frames_num={self.motion_frames_num}, slice_len={self.slice_len}")
         
-        # 初始化条件图
+        # 初始化条件图 - 使用 try-except 防止初始化失败
         logger.info(f"[FlashHead] Initializing base data with cond_image_path={self.cond_image_path}")
         try:
             get_base_data(self.pipeline, cond_image_path_or_dir=self.cond_image_path, base_seed=42, use_face_crop=False)
@@ -92,7 +95,7 @@ class FlashHeadAvatar(BaseAvatar):
             logger.error(f"[FlashHead] Base data initialization failed: {e}")
             import traceback
             traceback.print_exc()
-            raise
+            # 不抛出异常，让前端至少能连接
         
         # 音频缓冲区配置（参考 generate_video.py 的 stream 模式）
         self.audio_chunk_size = self.slice_len * self.sample_rate // self.tgt_fps
@@ -119,6 +122,20 @@ class FlashHeadAvatar(BaseAvatar):
         logger.info('[FlashHead] Start inference thread')
         logger.info(f'[FlashHead] Inference params: batch_size={self.batch_size}, min_audio_length={self.min_audio_length}, '
                     f'motion_frames_num={self.motion_frames_num}, sample_rate={self.sample_rate}, tgt_fps={self.tgt_fps}')
+        
+        # 如果 ASR 初始化失败，输出静态图片
+        if self.asr is None:
+            logger.warning('[FlashHead] ASR not initialized, outputting static frames only')
+            frame_idx = 0
+            while not quit_event.is_set():
+                if len(self.frame_list_cycle) > 0:
+                    static_frame = self.frame_list_cycle[frame_idx % len(self.frame_list_cycle)]
+                    self.res_frame_queue.put((static_frame, [], frame_idx % len(self.frame_list_cycle)))
+                    frame_idx += 1
+                else:
+                    self.res_frame_queue.put((np.zeros((512, 512, 3), dtype=np.uint8), [], 0))
+                time.sleep(0.04)  # 25 fps
+            return
         
         # 音频累积缓冲区
         audio_accumulator = []
