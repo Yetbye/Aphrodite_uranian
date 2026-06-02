@@ -85,8 +85,14 @@ class FlashHeadAvatar(BaseAvatar):
         
         # 初始化条件图
         logger.info(f"[FlashHead] Initializing base data with cond_image_path={self.cond_image_path}")
-        get_base_data(self.pipeline, cond_image_path_or_dir=self.cond_image_path, base_seed=42, use_face_crop=False)
-        logger.info("[FlashHead] Base data initialized.")
+        try:
+            get_base_data(self.pipeline, cond_image_path_or_dir=self.cond_image_path, base_seed=42, use_face_crop=False)
+            logger.info("[FlashHead] Base data initialized successfully.")
+        except Exception as e:
+            logger.error(f"[FlashHead] Base data initialization failed: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
         
         # 音频缓冲区配置（参考 generate_video.py 的 stream 模式）
         self.audio_chunk_size = self.slice_len * self.sample_rate // self.tgt_fps
